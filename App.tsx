@@ -43,6 +43,7 @@ const App: React.FC = () => {
     lastPalmX: number;
     isGrabbing: boolean;
     pinchReleaseCount: number; // 用于延迟释放，需要连续几帧超过阈值才释放
+    pinchHistory: number[]; // 用于平滑处理，存储最近的距离值
   } | null>(null);
 
   const renderIntroSnow = () => {
@@ -110,9 +111,10 @@ const App: React.FC = () => {
     if (!containerRef.current || !hasStarted) return;
 
     const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-    // 移动设备上使用更宽松的捏合阈值和释放延迟
-    const PINCH_THRESHOLD = isMobile ? 0.12 : 0.08; // 移动设备阈值更大
+    // 移动设备上使用更精确的捏合检测
+    const PINCH_THRESHOLD = isMobile ? 0.10 : 0.08; // 移动设备使用更精确的阈值
     const PINCH_RELEASE_DELAY = isMobile ? 10 : 5; // 移动设备需要更多帧才释放
+    const PINCH_SMOOTHING_FRAMES = isMobile ? 5 : 3; // 移动设备使用更多帧进行平滑
     
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
@@ -152,7 +154,7 @@ const App: React.FC = () => {
     const handTracker = new HandTracker();
     sceneRef.current = {
       scene, camera, renderer, composer, particles, mainGroup, starLight, groundBounceLight, handTracker,
-      mode: AppMode.TREE, focusTarget: 0, lastGestureTime: 0, lastPalmX: 0.5, isGrabbing: false, pinchReleaseCount: 0
+      mode: AppMode.TREE, focusTarget: 0, lastGestureTime: 0, lastPalmX: 0.5, isGrabbing: false, pinchReleaseCount: 0, pinchHistory: []
     };
 
     // 优化：减少重复计算，直接遍历而不是先过滤
@@ -227,11 +229,53 @@ const App: React.FC = () => {
           mainGroup.rotation.y = THREE.MathUtils.lerp(mainGroup.rotation.y, (palm.x - 0.5) * 0.8, 0.08);
           mainGroup.rotation.x = THREE.MathUtils.lerp(mainGroup.rotation.x, (palm.y - 0.5) * 0.4, 0.08);
 
-          const wrist = landmarks[0], thumbTip = landmarks[4], indexTip = landmarks[8];
-          const pinchDist = Math.hypot(thumbTip.x - indexTip.x, thumbTip.y - indexTip.y);
+          const wrist = landmarks[0];
+          const thumbTip = landmarks[4];
+          const thumbIp = landmarks[3]; // 拇指指间关节
+          const indexTip = landmarks[8];
+          const indexPip = landmarks[6]; // 食指近端指间关节
+          const indexMcp = landmarks[5]; // 食指掌指关节
+          const middleTip = landmarks[12]; // 中指指尖
+          const ringTip = landmarks[16]; // 无名指指尖
+          const pinkyTip = landmarks[20]; // 小指指尖
           
-          // 检测捏合手势（移动设备使用更宽松的阈值）
-          if (pinchDist < PINCH_THRESHOLD) {
+          // 使用多个关键点计算更精确的捏合距离
+          const thumbToIndexDist = Math.hypot(thumbTip.x - indexTip.x, thumbTip.y - indexTip.y);
+          const thumbToIndexPipDist = Math.hypot(thumbTip.x - indexPip.x, thumbTip.y - indexPip.y);
+          
+          // 使用两个距离的平均值，更稳定
+          const pinchDist = (thumbToIndexDist + thumbToIndexPipDist) / 2;
+          
+          // 检查手指是否弯曲（确保是真正的捏合，而不是手指伸直）
+          const thumbBent = Math.hypot(thumbTip.x - thumbIp.x, thumbTip.y - thumbIp.y) < 
+                           Math.hypot(thumbIp.x - wrist.x, thumbIp.y - wrist.y) * 0.6;
+          const indexBent = Math.hypot(indexTip.x - indexPip.x, indexTip.y - indexPip.y) < 
+                           Math.hypot(indexPip.x - indexMcp.x, indexPip.y - indexMcp.y) * 1.2;
+          
+          // 检测捏拳手势：所有手指的指尖都靠近手腕
+          const thumbToWrist = Math.hypot(thumbTip.x - wrist.x, thumbTip.y - wrist.y);
+          const indexToWrist = Math.hypot(indexTip.x - wrist.x, indexTip.y - wrist.y);
+          const middleToWrist = Math.hypot(middleTip.x - wrist.x, middleTip.y - wrist.y);
+          const ringToWrist = Math.hypot(ringTip.x - wrist.x, ringTip.y - wrist.y);
+          const pinkyToWrist = Math.hypot(pinkyTip.x - wrist.x, pinkyTip.y - wrist.y);
+          
+          // 计算所有手指到手腕的平均距离
+          const avgFingerToWrist = (thumbToWrist + indexToWrist + middleToWrist + ringToWrist + pinkyToWrist) / 5;
+          // 捏拳：所有手指都靠近手腕（距离小于阈值）
+          const isFist = avgFingerToWrist < (isMobile ? 0.25 : 0.22);
+          
+          // 平滑处理：使用移动平均减少抖动
+          sceneRef.current!.pinchHistory.push(pinchDist);
+          if (sceneRef.current!.pinchHistory.length > PINCH_SMOOTHING_FRAMES) {
+            sceneRef.current!.pinchHistory.shift();
+          }
+          const smoothedPinchDist = sceneRef.current!.pinchHistory.reduce((a, b) => a + b, 0) / sceneRef.current!.pinchHistory.length;
+          
+          // 检测捏合手势（使用平滑后的距离，并检查手指弯曲）
+          // 或者检测到捏拳手势，都算作捏合
+          const isPinching = (smoothedPinchDist < PINCH_THRESHOLD && thumbBent && indexBent) || isFist;
+          
+          if (isPinching) {
             // 重置释放计数器
             sceneRef.current!.pinchReleaseCount = 0;
             
