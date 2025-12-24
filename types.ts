@@ -32,7 +32,13 @@ export interface HandLandmark {
   z: number;
 }
 
+// MediaPipe Category type
+export interface Category {
+  score: number;
+  categoryName: string;
+}
+
 export interface HandLandmarkerResult {
   landmarks?: HandLandmark[][];
-  handednesses?: Array<{ score: number; categoryName: string }>;
+  handednesses?: Category[][]; // MediaPipe 返回的是二维数组
 }

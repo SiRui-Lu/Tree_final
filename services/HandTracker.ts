@@ -1,5 +1,6 @@
 
 import { FilesetResolver, HandLandmarker } from '@mediapipe/tasks-vision';
+import type { HandLandmarkerResult as MediaPipeHandLandmarkerResult } from '@mediapipe/tasks-vision';
 import { HandLandmarkerResult } from '../types';
 
 export class HandTracker {
@@ -117,8 +118,13 @@ export class HandTracker {
     if (this.video.currentTime !== this.lastVideoTime) {
       this.lastVideoTime = this.video.currentTime;
       try {
-        const results = this.handLandmarker.detectForVideo(this.video, performance.now());
-        callback(results);
+        const results = this.handLandmarker.detectForVideo(this.video, performance.now()) as MediaPipeHandLandmarkerResult;
+        // 转换为自定义类型
+        const convertedResults: HandLandmarkerResult = {
+          landmarks: results.landmarks,
+          handednesses: results.handednesses
+        };
+        callback(convertedResults);
       } catch (error) {
         console.error('Hand detection error:', error);
       }

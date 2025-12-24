@@ -6,16 +6,16 @@ import { AppMode } from '../types';
 export class ParticleSystem {
   public group: THREE.Group;
   private mainParticles: THREE.Mesh[] = [];
-  private baseFiller: THREE.Points; 
+  private baseFiller!: THREE.Points; 
   private candyCanes: THREE.Mesh[] = [];
-  private dust: THREE.Points;
-  private snow: THREE.Points;
-  private groundSnow: THREE.Points; 
-  private groundMist: THREE.Points; 
+  private dust!: THREE.Points;
+  private snow!: THREE.Points;
+  private groundSnow!: THREE.Points; 
+  private groundMist!: THREE.Points; 
   public photoFrames: THREE.Group[] = [];
-  private starMesh: THREE.Mesh;
-  private starHalo: THREE.Group;
-  private groundGlow: THREE.Mesh;
+  private starMesh!: THREE.Mesh;
+  private starHalo!: THREE.Group;
+  private groundGlow!: THREE.Mesh;
   private glimmerParticles: THREE.Mesh[] = [];
 
   private lastMode: AppMode | null = null;
@@ -94,7 +94,7 @@ export class ParticleSystem {
     geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
     geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
     geo.setAttribute('seed', new THREE.BufferAttribute(seeds, 1));
-    const mat = new THREE.PointsMaterial({ size: 0.1, vertexColors: true, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false });
+    const mat = new THREE.PointsMaterial({ size: 0.15, vertexColors: true, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false });
     this.baseFiller = new THREE.Points(geo, mat);
     this.group.add(this.baseFiller);
   }
@@ -112,7 +112,7 @@ export class ParticleSystem {
     }
     geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
     geo.setAttribute('velocity', new THREE.BufferAttribute(velocities, 1));
-    const mat = new THREE.PointsMaterial({ color: 0xffffff, size: 0.8, map: this.snowflakeTexture, transparent: true, opacity: 0.2, blending: THREE.AdditiveBlending, depthWrite: false, alphaTest: 0.01 });
+    const mat = new THREE.PointsMaterial({ color: 0xffffff, size: 1.0, map: this.snowflakeTexture, transparent: true, opacity: 0.4, blending: THREE.AdditiveBlending, depthWrite: false, alphaTest: 0.01 });
     this.snow = new THREE.Points(geo, mat);
     this.group.add(this.snow);
   }
@@ -129,9 +129,9 @@ export class ParticleSystem {
     geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
     const mat = new THREE.PointsMaterial({ 
       color: 0xffeeaa, 
-      size: 0.1, 
+      size: 0.2, 
       transparent: true, 
-      opacity: 0.2, 
+      opacity: 0.4, 
       blending: THREE.AdditiveBlending, 
       depthWrite: false 
     });
@@ -154,7 +154,7 @@ export class ParticleSystem {
     }
     geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
     geo.setAttribute('seed', new THREE.BufferAttribute(seeds, 1));
-    const mat = new THREE.PointsMaterial({ size: 0.08, map: this.snowflakeTexture, transparent: true, opacity: 0, color: 0xccccff, blending: THREE.AdditiveBlending, depthWrite: false });
+    const mat = new THREE.PointsMaterial({ size: 0.12, map: this.snowflakeTexture, transparent: true, opacity: 0, color: 0xccccff, blending: THREE.AdditiveBlending, depthWrite: false });
     this.groundSnow = new THREE.Points(geo, mat);
     this.group.add(this.groundSnow);
   }
@@ -179,7 +179,7 @@ export class ParticleSystem {
     geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
     geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
     geo.setAttribute('seed', new THREE.BufferAttribute(seeds, 1));
-    const mat = new THREE.PointsMaterial({ size: 16, map: this.mistTexture, transparent: true, opacity: 0, vertexColors: true, blending: THREE.AdditiveBlending, depthWrite: false });
+    const mat = new THREE.PointsMaterial({ size: 20, map: this.mistTexture, transparent: true, opacity: 0, vertexColors: true, blending: THREE.AdditiveBlending, depthWrite: false });
     this.groundMist = new THREE.Points(geo, mat);
     this.group.add(this.groundMist);
   }
@@ -331,8 +331,8 @@ export class ParticleSystem {
     const tex = new THREE.CanvasTexture(canvas); tex.wrapS = tex.wrapT = THREE.RepeatWrapping; tex.repeat.set(4, 1);
     const tubeGeo = new THREE.TubeGeometry(new THREE.CatmullRomCurve3([new THREE.Vector3(0,0,0), new THREE.Vector3(0,0.3,0), new THREE.Vector3(0.1,0.45,0), new THREE.Vector3(0.2,0.4,0)]), 10, 0.03, 6, false);
     for(let i=0; i<80; i++) {
-      const mesh = new THREE.Mesh(tubeGeo, new THREE.MeshStandardMaterial({ map: tex, emissive: 0xffffff, emissiveMap: tex, emissiveIntensity: 0.3, side: THREE.DoubleSide }));
-      mesh.userData = { rotVel: new THREE.Vector3(Math.random()*0.04, Math.random()*0.04, Math.random()*0.04), noiseSeed: Math.random()*1000, baseEmissive: 0.3 };
+      const mesh = new THREE.Mesh(tubeGeo, new THREE.MeshStandardMaterial({ map: tex, emissive: 0xffffff, emissiveMap: tex, emissiveIntensity: 0.6, side: THREE.DoubleSide }));
+      mesh.userData = { rotVel: new THREE.Vector3(Math.random()*0.04, Math.random()*0.04, Math.random()*0.04), noiseSeed: Math.random()*1000, baseEmissive: 0.6 };
       this.candyCanes.push(mesh); this.group.add(mesh);
     }
   }
@@ -430,13 +430,23 @@ export class ParticleSystem {
         let targetPos = new THREE.Vector3(); let targetScale = new THREE.Vector3(1,1,1);
         const t = i / list.length; const seed = p.userData.noiseSeed;
         const twinkle = 0.5 + Math.sin(time * 2.0 + seed) * 0.5;
-        if (p.material instanceof THREE.MeshStandardMaterial) p.material.emissiveIntensity = p.userData.baseEmissive * (0.8 + twinkle * 0.4);
+        // 增强所有粒子的发光效果
+        if (p.material instanceof THREE.MeshStandardMaterial) {
+          const baseIntensity = p.userData.baseEmissive || 1.0; // 如果没有 baseEmissive，使用默认值
+          p.material.emissiveIntensity = baseIntensity * (1.0 + twinkle * 0.5); // 从 0.8-1.2 提升到 1.0-1.5
+        } else if (p.material instanceof THREE.MeshPhysicalMaterial) {
+          const baseIntensity = p.userData.baseEmissive || 1.0;
+          p.material.emissiveIntensity = baseIntensity * (1.0 + twinkle * 0.5); // 同样增强物理材质
+        }
         
         if (mode === AppMode.TREE) {
           const height = 32; const maxRadius = 14; const t_y = Math.pow(t, 1.4);
-          // 调整半径计算，避免中心区域粒子过密：增加最小半径，减少中心聚集
-          const minRadius = 1.5; // 设置最小半径，避免粒子完全聚集在中心
-          const radius = Math.max(minRadius, maxRadius * (1 - t) + Math.sin(seed * 0.5 + time * 0.3) * 0.8);
+          // 让顶部更尖：最小半径随高度变化，顶部允许更小的半径
+          // t 接近 1（顶部）时，minRadius 接近 0，让顶部更尖
+          // t 接近 0（底部）时，minRadius 更大，避免中心聚集
+          const minRadius = Math.max(0, 2.0 * (1 - t)); // 顶部为 0，底部为 2.0
+          const baseRadius = maxRadius * (1 - t); // 基础半径，从底部到顶部线性减小
+          const radius = Math.max(minRadius, baseRadius + Math.sin(seed * 0.5 + time * 0.3) * 0.8);
           const angle = t * 65 * Math.PI + Math.cos(seed * 0.4) * 0.8;
           targetPos.set(radius * Math.cos(angle), t_y * height - 16, radius * Math.sin(angle));
         } else if (mode === AppMode.SCATTER) {
