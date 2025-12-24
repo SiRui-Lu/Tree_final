@@ -8,35 +8,51 @@ export class HandTracker {
   private lastVideoTime = -1;
 
   async init() {
-    const vision = await FilesetResolver.forVisionTasks(
-      "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/wasm"
-    );
-    // 尝试使用 GPU，如果失败则回退到 CPU
+    // 检测是否为移动设备
+    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+    
     try {
-      this.handLandmarker = await HandLandmarker.createFromOptions(vision, {
-        baseOptions: {
-          modelAssetPath: `https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task`,
-          delegate: "GPU"
-        },
-        runningMode: "VIDEO",
-        numHands: 1,
-        minHandDetectionConfidence: 0.3, 
-        minHandPresenceConfidence: 0.3,
-        minTrackingConfidence: 0.3
-      });
+      const vision = await FilesetResolver.forVisionTasks(
+        "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/wasm"
+      );
+      
+      // 移动设备直接使用 CPU，避免 GPU 初始化问题
+      const delegate = isMobile ? "CPU" : "GPU";
+      
+      try {
+        this.handLandmarker = await HandLandmarker.createFromOptions(vision, {
+          baseOptions: {
+            modelAssetPath: `https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task`,
+            delegate: delegate
+          },
+          runningMode: "VIDEO",
+          numHands: 1,
+          minHandDetectionConfidence: 0.3, 
+          minHandPresenceConfidence: 0.3,
+          minTrackingConfidence: 0.3
+        });
+      } catch (error) {
+        if (!isMobile) {
+          // 非移动设备才尝试回退到 CPU
+          console.warn('GPU delegate failed, falling back to CPU:', error);
+          this.handLandmarker = await HandLandmarker.createFromOptions(vision, {
+            baseOptions: {
+              modelAssetPath: `https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task`,
+              delegate: "CPU"
+            },
+            runningMode: "VIDEO",
+            numHands: 1,
+            minHandDetectionConfidence: 0.3, 
+            minHandPresenceConfidence: 0.3,
+            minTrackingConfidence: 0.3
+          });
+        } else {
+          throw error;
+        }
+      }
     } catch (error) {
-      console.warn('GPU delegate failed, falling back to CPU:', error);
-      this.handLandmarker = await HandLandmarker.createFromOptions(vision, {
-        baseOptions: {
-          modelAssetPath: `https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task`,
-          delegate: "CPU"
-        },
-        runningMode: "VIDEO",
-        numHands: 1,
-        minHandDetectionConfidence: 0.3, 
-        minHandPresenceConfidence: 0.3,
-        minTrackingConfidence: 0.3
-      });
+      console.error('MediaPipe initialization failed:', error);
+      throw error;
     }
 
     this.video = document.createElement('video');

@@ -189,6 +189,12 @@ const App: React.FC = () => {
       const now = performance.now();
       const time = now * 0.001;
 
+      // 如果手势追踪未初始化，跳过检测（避免错误）
+      if (!handTracker || !sceneRef.current?.handTracker) {
+        requestAnimationFrame(animate);
+        return;
+      }
+      
       handTracker.detect((results: HandLandmarkerResult) => {
         if (results.landmarks && results.landmarks.length > 0) {
           const landmarks = results.landmarks[0];
@@ -312,22 +318,34 @@ const App: React.FC = () => {
       requestAnimationFrame(animate);
     };
 
+    // 添加超时机制，避免在移动设备上无限等待
+    const initTimeout = setTimeout(() => {
+      console.warn('手势追踪初始化超时，继续运行应用');
+      setCameraError('手势追踪初始化超时，应用将继续运行（手势功能可能不可用）');
+      setLoading(false);
+      animate();
+    }, 15000); // 15秒超时
+
     handTracker.init()
       .then(() => { 
+        clearTimeout(initTimeout);
         console.log('手势追踪初始化成功');
         setCameraError('');
         setLoading(false); 
         animate(); 
       })
       .catch((error: any) => { 
+        clearTimeout(initTimeout);
         console.error('手势追踪初始化失败:', error);
         let errorMessage = '摄像头初始化失败';
         if (error.name === 'NotReadableError' || error.message?.includes('Device in use')) {
-          errorMessage = '摄像头被其他应用占用，请关闭其他使用摄像头的应用后刷新页面';
+          errorMessage = '摄像头被其他应用占用，应用将继续运行（手势功能不可用）';
         } else if (error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError') {
-          errorMessage = '摄像头权限被拒绝，请在浏览器设置中允许摄像头访问';
+          errorMessage = '摄像头权限被拒绝，应用将继续运行（手势功能不可用）';
         } else if (error.name === 'NotFoundError' || error.name === 'DevicesNotFoundError') {
-          errorMessage = '未检测到摄像头设备';
+          errorMessage = '未检测到摄像头设备，应用将继续运行（手势功能不可用）';
+        } else {
+          errorMessage = '手势追踪初始化失败，应用将继续运行（手势功能可能不可用）';
         }
         setCameraError(errorMessage);
         setLoading(false); 
