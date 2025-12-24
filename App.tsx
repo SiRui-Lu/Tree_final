@@ -42,8 +42,9 @@ const App: React.FC = () => {
     lastGestureTime: number;
     lastPalmX: number;
     isGrabbing: boolean;
-    pinchReleaseCount: number; // 用于延迟释放，需要连续几帧超过阈值才释放
-    pinchHistory: number[]; // 用于平滑处理，存储最近的距离值
+    fistReleaseCount: number; // 用于延迟释放，需要连续几帧超过阈值才释放
+    lastModeChangeTime: number; // 上次模式切换的时间
+    gestureConfirmCount: { peace: number; open: number }; // 手势确认计数器
   } | null>(null);
 
   const renderIntroSnow = () => {
@@ -111,10 +112,10 @@ const App: React.FC = () => {
     if (!containerRef.current || !hasStarted) return;
 
     const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-    // 移动设备上使用更精确的捏合检测
-    const PINCH_THRESHOLD = isMobile ? 0.10 : 0.08; // 移动设备使用更精确的阈值
-    const PINCH_RELEASE_DELAY = isMobile ? 10 : 5; // 移动设备需要更多帧才释放
-    const PINCH_SMOOTHING_FRAMES = isMobile ? 5 : 3; // 移动设备使用更多帧进行平滑
+    // 移动设备上使用更宽松的释放延迟（减少等待时间）
+    const FIST_RELEASE_DELAY = isMobile ? 4 : 3; // 进一步减少释放延迟，更快响应
+    const GESTURE_CONFIRM_FRAMES = isMobile ? 8 : 5; // 需要连续多少帧确认手势
+    const MODE_SWITCH_COOLDOWN = 800; // 模式切换后的冷却时间（毫秒）
     
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
@@ -154,7 +155,7 @@ const App: React.FC = () => {
     const handTracker = new HandTracker();
     sceneRef.current = {
       scene, camera, renderer, composer, particles, mainGroup, starLight, groundBounceLight, handTracker,
-      mode: AppMode.TREE, focusTarget: 0, lastGestureTime: 0, lastPalmX: 0.5, isGrabbing: false, pinchReleaseCount: 0, pinchHistory: []
+      mode: AppMode.TREE, focusTarget: 0, lastGestureTime: 0, lastPalmX: 0.5, isGrabbing: false, fistReleaseCount: 0, lastModeChangeTime: 0, gestureConfirmCount: { peace: 0, open: 0 }
     };
 
     // 优化：减少重复计算，直接遍历而不是先过滤
@@ -231,26 +232,10 @@ const App: React.FC = () => {
 
           const wrist = landmarks[0];
           const thumbTip = landmarks[4];
-          const thumbIp = landmarks[3]; // 拇指指间关节
           const indexTip = landmarks[8];
-          const indexPip = landmarks[6]; // 食指近端指间关节
-          const indexMcp = landmarks[5]; // 食指掌指关节
           const middleTip = landmarks[12]; // 中指指尖
           const ringTip = landmarks[16]; // 无名指指尖
           const pinkyTip = landmarks[20]; // 小指指尖
-          
-          // 使用多个关键点计算更精确的捏合距离
-          const thumbToIndexDist = Math.hypot(thumbTip.x - indexTip.x, thumbTip.y - indexTip.y);
-          const thumbToIndexPipDist = Math.hypot(thumbTip.x - indexPip.x, thumbTip.y - indexPip.y);
-          
-          // 使用两个距离的平均值，更稳定
-          const pinchDist = (thumbToIndexDist + thumbToIndexPipDist) / 2;
-          
-          // 检查手指是否弯曲（确保是真正的捏合，而不是手指伸直）
-          const thumbBent = Math.hypot(thumbTip.x - thumbIp.x, thumbTip.y - thumbIp.y) < 
-                           Math.hypot(thumbIp.x - wrist.x, thumbIp.y - wrist.y) * 0.6;
-          const indexBent = Math.hypot(indexTip.x - indexPip.x, indexTip.y - indexPip.y) < 
-                           Math.hypot(indexPip.x - indexMcp.x, indexPip.y - indexMcp.y) * 1.2;
           
           // 检测捏拳手势：所有手指的指尖都靠近手腕
           const thumbToWrist = Math.hypot(thumbTip.x - wrist.x, thumbTip.y - wrist.y);
@@ -264,20 +249,9 @@ const App: React.FC = () => {
           // 捏拳：所有手指都靠近手腕（距离小于阈值）
           const isFist = avgFingerToWrist < (isMobile ? 0.25 : 0.22);
           
-          // 平滑处理：使用移动平均减少抖动
-          sceneRef.current!.pinchHistory.push(pinchDist);
-          if (sceneRef.current!.pinchHistory.length > PINCH_SMOOTHING_FRAMES) {
-            sceneRef.current!.pinchHistory.shift();
-          }
-          const smoothedPinchDist = sceneRef.current!.pinchHistory.reduce((a, b) => a + b, 0) / sceneRef.current!.pinchHistory.length;
-          
-          // 检测捏合手势（使用平滑后的距离，并检查手指弯曲）
-          // 或者检测到捏拳手势，都算作捏合
-          const isPinching = (smoothedPinchDist < PINCH_THRESHOLD && thumbBent && indexBent) || isFist;
-          
-          if (isPinching) {
+          if (isFist) {
             // 重置释放计数器
-            sceneRef.current!.pinchReleaseCount = 0;
+            sceneRef.current!.fistReleaseCount = 0;
             
             if (!sceneRef.current!.isGrabbing && now - sceneRef.current!.lastGestureTime > 400) {
               const nearestIdx = findNearestPhotoIndex(palm.x, palm.y);
@@ -286,52 +260,95 @@ const App: React.FC = () => {
                 sceneRef.current!.mode = AppMode.FOCUS;
                 sceneRef.current!.isGrabbing = true;
                 sceneRef.current!.lastGestureTime = now;
-                sceneRef.current!.pinchReleaseCount = 0; // 重置计数器
-                if (lastGestureInfoRef.current !== '🤏 聚焦照片') {
-                  setGestureInfo('🤏 聚焦照片');
-                  lastGestureInfoRef.current = '🤏 聚焦照片';
+                sceneRef.current!.lastModeChangeTime = now; // 记录模式切换时间，触发冷却
+                sceneRef.current!.fistReleaseCount = 0; // 重置计数器
+                // 重置手势确认计数器
+                sceneRef.current!.gestureConfirmCount.peace = 0;
+                sceneRef.current!.gestureConfirmCount.open = 0;
+                if (lastGestureInfoRef.current !== '✊ 聚焦照片') {
+                  setGestureInfo('✊ 聚焦照片');
+                  lastGestureInfoRef.current = '✊ 聚焦照片';
                 }
               }
             }
           } else {
             // 超过阈值，增加释放计数器
             if (sceneRef.current!.isGrabbing) {
-              sceneRef.current!.pinchReleaseCount++;
+              sceneRef.current!.fistReleaseCount++;
               // 需要连续多帧都超过阈值才释放（避免抖动导致误释放）
-              if (sceneRef.current!.pinchReleaseCount >= PINCH_RELEASE_DELAY) {
+              if (sceneRef.current!.fistReleaseCount >= FIST_RELEASE_DELAY) {
                 sceneRef.current!.isGrabbing = false;
-                sceneRef.current!.pinchReleaseCount = 0;
+                sceneRef.current!.fistReleaseCount = 0;
+                // 退出FOCUS模式时，设置冷却时间，避免立即触发其他手势
+                sceneRef.current!.lastModeChangeTime = now;
               }
             }
           }
 
-          // 手势检测（降低阈值，更容易识别）
-          if (now - sceneRef.current!.lastGestureTime > 500) {
+          // 手势检测（添加稳定性检查和冷却时间）
+          // 检查是否在冷却期内（刚切换模式后需要等待）
+          const isInCooldown = now - sceneRef.current!.lastModeChangeTime < MODE_SWITCH_COOLDOWN;
+          // 如果正在抓取（FOCUS模式），也暂时禁用其他手势检测
+          const canDetectOtherGestures = !sceneRef.current!.isGrabbing && !isInCooldown;
+          
+          if (canDetectOtherGestures && now - sceneRef.current!.lastGestureTime > 500) {
             const middleTip = landmarks[12], ringTip = landmarks[16];
+            const pinkyTip = landmarks[20]; // 小指指尖
+            const ringPip = landmarks[14]; // 无名指近端指间关节
+            const pinkyPip = landmarks[18]; // 小指近端指间关节
+            
             // 缓存计算结果
             const indexDist = Math.hypot(indexTip.x - wrist.x, indexTip.y - wrist.y);
             const middleDist = Math.hypot(middleTip.x - wrist.x, middleTip.y - wrist.y);
             const ringDist = Math.hypot(ringTip.x - wrist.x, ringTip.y - wrist.y);
+            const pinkyDist = Math.hypot(pinkyTip.x - wrist.x, pinkyTip.y - wrist.y);
             
-            const indexExtended = indexDist > 0.28;
-            const middleExtended = middleDist > 0.28;
-            const isPeaceSign = indexExtended && middleExtended && ringDist < 0.32;
+            // 改进的耶手势检测：食指和中指伸直，无名指和小指弯曲
+            const indexExtended = indexDist > 0.26; // 降低阈值，更容易识别
+            const middleExtended = middleDist > 0.26;
+            // 检查无名指和小指是否弯曲（指尖到手腕的距离应该小于关节到手腕的距离）
+            const ringBent = ringDist < Math.hypot(ringPip.x - wrist.x, ringPip.y - wrist.y) * 1.1;
+            const pinkyBent = pinkyDist < Math.hypot(pinkyPip.x - wrist.x, pinkyPip.y - wrist.y) * 1.1;
+            const isPeaceSign = indexExtended && middleExtended && ringBent && pinkyBent;
+            
+            // 张开手掌：所有手指都伸直
             const isOpenHand = (indexDist + middleDist) / 2 > 0.38;
 
+            // 手势确认机制：需要连续多帧都检测到相同手势才切换
             if (isPeaceSign) {
-              sceneRef.current!.mode = AppMode.TREE;
-              sceneRef.current!.lastGestureTime = now;
-              if (lastGestureInfoRef.current !== '✌️ 圣诞树模式') {
-                setGestureInfo('✌️ 圣诞树模式');
-                lastGestureInfoRef.current = '✌️ 圣诞树模式';
+              sceneRef.current!.gestureConfirmCount.peace++;
+              sceneRef.current!.gestureConfirmCount.open = 0; // 重置另一个手势的计数器
+              
+              // 需要连续确认才切换
+              if (sceneRef.current!.gestureConfirmCount.peace >= GESTURE_CONFIRM_FRAMES) {
+                sceneRef.current!.mode = AppMode.TREE;
+                sceneRef.current!.lastGestureTime = now;
+                sceneRef.current!.lastModeChangeTime = now; // 记录模式切换时间
+                sceneRef.current!.gestureConfirmCount.peace = 0; // 重置计数器
+                if (lastGestureInfoRef.current !== '✌️ 圣诞树模式') {
+                  setGestureInfo('✌️ 圣诞树模式');
+                  lastGestureInfoRef.current = '✌️ 圣诞树模式';
+                }
               }
-            } else if (isOpenHand && sceneRef.current!.mode !== AppMode.SCATTER) {
-              sceneRef.current!.mode = AppMode.SCATTER;
-              sceneRef.current!.lastGestureTime = now;
-              if (lastGestureInfoRef.current !== '🖐️ 画廊模式') {
-                setGestureInfo('🖐️ 画廊模式');
-                lastGestureInfoRef.current = '🖐️ 画廊模式';
+            } else if (isOpenHand) {
+              sceneRef.current!.gestureConfirmCount.open++;
+              sceneRef.current!.gestureConfirmCount.peace = 0; // 重置另一个手势的计数器
+              
+              // 需要连续确认才切换，且当前不是SCATTER模式
+              if (sceneRef.current!.gestureConfirmCount.open >= GESTURE_CONFIRM_FRAMES && sceneRef.current!.mode !== AppMode.SCATTER) {
+                sceneRef.current!.mode = AppMode.SCATTER;
+                sceneRef.current!.lastGestureTime = now;
+                sceneRef.current!.lastModeChangeTime = now; // 记录模式切换时间
+                sceneRef.current!.gestureConfirmCount.open = 0; // 重置计数器
+                if (lastGestureInfoRef.current !== '🖐️ 画廊模式') {
+                  setGestureInfo('🖐️ 画廊模式');
+                  lastGestureInfoRef.current = '🖐️ 画廊模式';
+                }
               }
+            } else {
+              // 没有检测到手势，重置计数器
+              sceneRef.current!.gestureConfirmCount.peace = 0;
+              sceneRef.current!.gestureConfirmCount.open = 0;
             }
           }
 
@@ -498,7 +515,7 @@ const App: React.FC = () => {
         
         <div className="flex flex-col items-center gap-2">
           <p className="text-[#fceea7]/60 text-[8px] sm:text-[10px] tracking-[0.3em] uppercase cinzel font-bold text-center drop-shadow-lg">
-            Peace ✌️: Tree | Open 🖐️: Gallery | Pinch 🤏: Focus Photo
+            Peace ✌️: Tree | Open 🖐️: Gallery | Fist ✊: Focus Photo
           </p>
           <div className="h-[1px] w-24 bg-gradient-to-r from-transparent via-[#d4af37]/30 to-transparent"></div>
         </div>
