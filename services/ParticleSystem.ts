@@ -203,39 +203,99 @@ export class ParticleSystem {
   private initStar() {
     const shape = new THREE.Shape();
     const points = 5; const innerRadius = 0.3; const outerRadius = 0.8;
+    // 使用曲线创建更圆润的星星形状
     for (let i = 0; i < 2 * points; i++) {
       const r = i % 2 === 0 ? outerRadius : innerRadius;
       const angle = i * Math.PI / points;
-      if (i === 0) shape.moveTo(Math.cos(angle) * r, Math.sin(angle) * r);
-      else shape.lineTo(Math.cos(angle) * r, Math.sin(angle) * r);
+      const x = Math.cos(angle) * r;
+      const y = Math.sin(angle) * r;
+      
+      if (i === 0) {
+        shape.moveTo(x, y);
+      } else {
+        // 使用二次贝塞尔曲线让菱角更圆润
+        const prevAngle = (i - 1) * Math.PI / points;
+        const prevR = (i - 1) % 2 === 0 ? outerRadius : innerRadius;
+        const prevX = Math.cos(prevAngle) * prevR;
+        const prevY = Math.sin(prevAngle) * prevR;
+        const midAngle = (prevAngle + angle) / 2;
+        const midR = (prevR + r) * 0.5;
+        const midX = Math.cos(midAngle) * midR * 0.9; // 0.9 让曲线更平滑
+        const midY = Math.sin(midAngle) * midR * 0.9;
+        shape.quadraticCurveTo(midX, midY, x, y);
+      }
     }
     shape.closePath();
-    const starGeo = new THREE.ExtrudeGeometry(shape, { depth: 0.1, bevelEnabled: true, bevelThickness: 0.05, bevelSize: 0.05, bevelSegments: 3 });
+    // 增加 bevelSegments 让边缘更圆润
+    const starGeo = new THREE.ExtrudeGeometry(shape, { 
+      depth: 0.1, 
+      bevelEnabled: true, 
+      bevelThickness: 0.08, 
+      bevelSize: 0.08, 
+      bevelSegments: 8, // 增加分段数，让边缘更圆润
+      curveSegments: 16 // 增加曲线分段数
+    });
+    // 增强星星的发光效果
     this.starMesh = new THREE.Mesh(starGeo, new THREE.MeshStandardMaterial({ 
       color: 0xffd700, 
       emissive: 0xffaa00, 
-      emissiveIntensity: 0.15, 
+      emissiveIntensity: 0.5, // 进一步增强发光强度
       metalness: 0.1, 
       roughness: 1 
     }));
     this.group.add(this.starMesh);
 
+    // 创建多层光晕效果
     this.starHalo = new THREE.Group();
-    const canvas = document.createElement('canvas'); canvas.width = 128; canvas.height = 128;
-    const ctx = canvas.getContext('2d')!;
-    const grad = ctx.createRadialGradient(64,64,0, 64,64,64);
-    grad.addColorStop(0, 'rgba(255, 230, 150, 0.1)'); 
-    grad.addColorStop(0.6, 'rgba(255, 150, 50, 0.005)'); 
-    grad.addColorStop(1, 'rgba(0, 0, 0, 0)');
-    ctx.fillStyle = grad; ctx.fillRect(0,0,128,128);
-    const glow = new THREE.Mesh(new THREE.PlaneGeometry(2.5, 2.5), new THREE.MeshBasicMaterial({ 
-      map: new THREE.CanvasTexture(canvas), 
-      transparent: true, 
-      blending: THREE.AdditiveBlending, 
-      depthWrite: false, 
-      opacity: 0.2
-    }));
-    glow.position.z = -0.25; this.starHalo.add(glow);
+    
+    // 内层光晕（更亮，更小）
+    const innerCanvas = document.createElement('canvas'); 
+    innerCanvas.width = 256; innerCanvas.height = 256;
+    const innerCtx = innerCanvas.getContext('2d')!;
+    const innerGrad = innerCtx.createRadialGradient(128, 128, 0, 128, 128, 128);
+    innerGrad.addColorStop(0, 'rgba(255, 240, 180, 0.7)'); 
+    innerGrad.addColorStop(0.4, 'rgba(255, 200, 100, 0.3)'); 
+    innerGrad.addColorStop(0.7, 'rgba(255, 150, 50, 0.1)'); 
+    innerGrad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+    innerCtx.fillStyle = innerGrad; 
+    innerCtx.fillRect(0, 0, 256, 256);
+    const innerGlow = new THREE.Mesh(
+      new THREE.PlaneGeometry(3.5, 3.5), 
+      new THREE.MeshBasicMaterial({ 
+        map: new THREE.CanvasTexture(innerCanvas), 
+        transparent: true, 
+        blending: THREE.AdditiveBlending, 
+        depthWrite: false, 
+        opacity: 0.8
+      })
+    );
+    innerGlow.position.z = -0.2; 
+    this.starHalo.add(innerGlow);
+    
+    // 外层光晕（更大，更柔和）
+    const outerCanvas = document.createElement('canvas'); 
+    outerCanvas.width = 256; outerCanvas.height = 256;
+    const outerCtx = outerCanvas.getContext('2d')!;
+    const outerGrad = outerCtx.createRadialGradient(128, 128, 0, 128, 128, 128);
+    outerGrad.addColorStop(0, 'rgba(255, 230, 150, 0.4)'); 
+    outerGrad.addColorStop(0.5, 'rgba(255, 180, 80, 0.15)'); 
+    outerGrad.addColorStop(0.8, 'rgba(255, 150, 50, 0.06)'); 
+    outerGrad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+    outerCtx.fillStyle = outerGrad; 
+    outerCtx.fillRect(0, 0, 256, 256);
+    const outerGlow = new THREE.Mesh(
+      new THREE.PlaneGeometry(5.5, 5.5), 
+      new THREE.MeshBasicMaterial({ 
+        map: new THREE.CanvasTexture(outerCanvas), 
+        transparent: true, 
+        blending: THREE.AdditiveBlending, 
+        depthWrite: false, 
+        opacity: 0.6
+      })
+    );
+    outerGlow.position.z = -0.3; 
+    this.starHalo.add(outerGlow);
+    
     this.group.add(this.starHalo);
   }
 
@@ -374,7 +434,9 @@ export class ParticleSystem {
         
         if (mode === AppMode.TREE) {
           const height = 32; const maxRadius = 14; const t_y = Math.pow(t, 1.4);
-          const radius = Math.max(0, maxRadius * (1 - t) + Math.sin(seed * 0.5 + time * 0.3) * 0.8);
+          // 调整半径计算，避免中心区域粒子过密：增加最小半径，减少中心聚集
+          const minRadius = 1.5; // 设置最小半径，避免粒子完全聚集在中心
+          const radius = Math.max(minRadius, maxRadius * (1 - t) + Math.sin(seed * 0.5 + time * 0.3) * 0.8);
           const angle = t * 65 * Math.PI + Math.cos(seed * 0.4) * 0.8;
           targetPos.set(radius * Math.cos(angle), t_y * height - 16, radius * Math.sin(angle));
         } else if (mode === AppMode.SCATTER) {
@@ -480,6 +542,25 @@ export class ParticleSystem {
 
     this.starMesh.position.lerp(mode === AppMode.TREE ? new THREE.Vector3(0, 20, 0) : new THREE.Vector3(0, 40, -50), 0.05);
     this.starMesh.scale.lerp(mode === AppMode.TREE ? new THREE.Vector3(2,2,2) : new THREE.Vector3(0.1,0.1,0.1), 0.05);
+    
+    // 在圣诞树模式下，星星慢慢自转并增强发光效果
+    if (mode === AppMode.TREE) {
+      this.starMesh.rotation.y += 0.005; // 慢慢自转（每帧旋转 0.005 弧度）
+      this.starMesh.rotation.z += 0.002; // 轻微倾斜旋转，更有动感
+      
+      // 让发光效果有轻微的闪烁（呼吸效果）
+      const starMat = this.starMesh.material as THREE.MeshStandardMaterial;
+      const glowIntensity = 0.7 + Math.sin(time * 1.5) * 0.15; // 在 0.55-0.85 之间变化
+      starMat.emissiveIntensity = glowIntensity;
+      
+      // 光晕也跟随旋转
+      this.starHalo.rotation.z = this.starMesh.rotation.z * 0.5; // 光晕旋转速度是星星的一半
+    } else {
+      // 非圣诞树模式下，恢复默认发光强度
+      const starMat = this.starMesh.material as THREE.MeshStandardMaterial;
+      starMat.emissiveIntensity = 0.15;
+    }
+    
     this.starHalo.visible = mode === AppMode.TREE;
     this.groundGlow.visible = mode === AppMode.TREE;
   }

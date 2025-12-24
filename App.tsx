@@ -136,9 +136,9 @@ const App: React.FC = () => {
     
     const bloomPass = new UnrealBloomPass(
       new THREE.Vector2(window.innerWidth, window.innerHeight), 
-      0.2, 
-      isMobile ? 0.3 : 0.4, 
-      0.5
+      0.1, // 进一步降低强度，减少过亮区域
+      isMobile ? 0.3 : 0.4, // 提高阈值，只有更亮的区域才会产生bloom
+      0.3 // 进一步降低半径
     );
     composer.addPass(bloomPass);
 
@@ -377,8 +377,8 @@ const App: React.FC = () => {
       });
 
       if (sceneRef.current!.mode === AppMode.TREE) {
-        starLight.intensity = 15 + Math.sin(time * 2) * 5; 
-        starLight.position.set(0, 20, 5);
+        starLight.intensity = 0; // 关闭光源
+        starLight.position.set(0, 20, -2);
         groundBounceLight.intensity = 1.5 + Math.sin(time * 2) * 0.5; 
         groundBounceLight.position.set(0, -18, 12);
         camera.position.lerp(new THREE.Vector3(0, 2, 50), 0.05);
