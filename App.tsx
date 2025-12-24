@@ -41,7 +41,8 @@ const App: React.FC = () => {
     focusTarget: number;
     lastGestureTime: number;
     lastPalmX: number;
-    isGrabbing: boolean; 
+    isGrabbing: boolean;
+    pinchReleaseCount: number; // 用于延迟释放，需要连续几帧超过阈值才释放
   } | null>(null);
 
   const renderIntroSnow = () => {
@@ -109,6 +110,10 @@ const App: React.FC = () => {
     if (!containerRef.current || !hasStarted) return;
 
     const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+    // 移动设备上使用更宽松的捏合阈值和释放延迟
+    const PINCH_THRESHOLD = isMobile ? 0.12 : 0.08; // 移动设备阈值更大
+    const PINCH_RELEASE_DELAY = isMobile ? 10 : 5; // 移动设备需要更多帧才释放
+    
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
     camera.position.set(0, 0, 50);
@@ -147,7 +152,7 @@ const App: React.FC = () => {
     const handTracker = new HandTracker();
     sceneRef.current = {
       scene, camera, renderer, composer, particles, mainGroup, starLight, groundBounceLight, handTracker,
-      mode: AppMode.TREE, focusTarget: 0, lastGestureTime: 0, lastPalmX: 0.5, isGrabbing: false
+      mode: AppMode.TREE, focusTarget: 0, lastGestureTime: 0, lastPalmX: 0.5, isGrabbing: false, pinchReleaseCount: 0
     };
 
     // 优化：减少重复计算，直接遍历而不是先过滤
@@ -225,8 +230,11 @@ const App: React.FC = () => {
           const wrist = landmarks[0], thumbTip = landmarks[4], indexTip = landmarks[8];
           const pinchDist = Math.hypot(thumbTip.x - indexTip.x, thumbTip.y - indexTip.y);
           
-          // 降低捏合阈值，更容易触发
-          if (pinchDist < 0.08) {
+          // 检测捏合手势（移动设备使用更宽松的阈值）
+          if (pinchDist < PINCH_THRESHOLD) {
+            // 重置释放计数器
+            sceneRef.current!.pinchReleaseCount = 0;
+            
             if (!sceneRef.current!.isGrabbing && now - sceneRef.current!.lastGestureTime > 400) {
               const nearestIdx = findNearestPhotoIndex(palm.x, palm.y);
               if (nearestIdx !== -1) {
@@ -234,6 +242,7 @@ const App: React.FC = () => {
                 sceneRef.current!.mode = AppMode.FOCUS;
                 sceneRef.current!.isGrabbing = true;
                 sceneRef.current!.lastGestureTime = now;
+                sceneRef.current!.pinchReleaseCount = 0; // 重置计数器
                 if (lastGestureInfoRef.current !== '🤏 聚焦照片') {
                   setGestureInfo('🤏 聚焦照片');
                   lastGestureInfoRef.current = '🤏 聚焦照片';
@@ -241,7 +250,15 @@ const App: React.FC = () => {
               }
             }
           } else {
-            sceneRef.current!.isGrabbing = false;
+            // 超过阈值，增加释放计数器
+            if (sceneRef.current!.isGrabbing) {
+              sceneRef.current!.pinchReleaseCount++;
+              // 需要连续多帧都超过阈值才释放（避免抖动导致误释放）
+              if (sceneRef.current!.pinchReleaseCount >= PINCH_RELEASE_DELAY) {
+                sceneRef.current!.isGrabbing = false;
+                sceneRef.current!.pinchReleaseCount = 0;
+              }
+            }
           }
 
           // 手势检测（降低阈值，更容易识别）
