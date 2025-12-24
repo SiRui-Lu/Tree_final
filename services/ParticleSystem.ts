@@ -349,43 +349,8 @@ export class ParticleSystem {
   }
 
   private initDefaultPhotos() {
-    // 1. 创建文字贺卡
+    // 创建文字贺卡
     this.addPhotoToScene(this.createTextCardTexture("愿今年，胜旧年！", "圣诞快乐噢卓琳！", "--天天"));
-
-    // 2. 立即为 1.jpg 创建一个“加载中”占位符框
-    const placeholderTex = this.createTextCardTexture("1.jpg", "图片正在路上...", "耐心等等噢~");
-    this.addPhotoToScene(placeholderTex);
-    const targetFrameIndex = this.photoFrames.length - 1;
-
-    // 3. 开始异步加载 1.jpg (使用 public 目录路径)
-    const loader = new THREE.TextureLoader();
-    loader.load(
-      '/1.jpg', 
-      (tex) => {
-        console.log('1.jpg 加载成功');
-        tex.colorSpace = THREE.SRGBColorSpace;
-        const photoMesh = this.photoFrames[targetFrameIndex].children[1] as THREE.Mesh;
-        if (photoMesh && photoMesh.material instanceof THREE.MeshBasicMaterial) {
-          photoMesh.material.map = tex;
-          photoMesh.material.needsUpdate = true;
-        }
-      },
-      (progress) => {
-        // 加载进度回调（可选）
-        if (progress.total > 0) {
-          console.log(`1.jpg 加载进度: ${(progress.loaded / progress.total * 100).toFixed(0)}%`);
-        }
-      },
-      (err) => {
-        console.error("1.jpg 加载失败:", err);
-        const errorTex = this.createTextCardTexture("1.jpg", "哎呀，没找到图片", "检查下文件名？");
-        const photoMesh = this.photoFrames[targetFrameIndex].children[1] as THREE.Mesh;
-        if (photoMesh && photoMesh.material instanceof THREE.MeshBasicMaterial) {
-          photoMesh.material.map = errorTex;
-          photoMesh.material.needsUpdate = true;
-        }
-      }
-    );
   }
 
   public addPhotoToScene(texture: THREE.Texture) {
